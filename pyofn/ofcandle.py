@@ -2,7 +2,7 @@
 
 import numpy as np
 import copy
-import ofnumber as ofn
+import pyofn.ofnumber as ofn
 import matplotlib.pyplot as plt
 from scipy import signal
 from scipy import stats
