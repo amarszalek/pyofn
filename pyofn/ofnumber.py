@@ -4,7 +4,7 @@ import numpy as np
 from copy import deepcopy
 from numpy.core.numeric import isscalar
 from scipy.interpolate import interp1d
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid as trapz
 
 
 class Branch(object):
