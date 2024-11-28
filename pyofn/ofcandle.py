@@ -258,6 +258,9 @@ def compute_params_s(price, spread, stype):
         b = lw_average(price + spread)
         c = ew_average(price + spread)
         s2 = np.max([a, b, c])
+    elif stype == 'close':
+        s1 = price[-1]
+        s2 = s1
     else:
         raise ValueError('wrong param_s')
     return s1, s2
