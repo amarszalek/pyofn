@@ -150,13 +150,19 @@ def compute_linear(price, volume, spread, params):
         fx0 = np.min(new_price) - c1
         fx1 = s1
         gx1 = s2
-        gx0 = (field_a / field_b) * (fx1 - fx0) + gx1
+        if field_b < 1.0e-6:
+            gx0 = gx1
+        else:
+            gx0 = (field_a / field_b) * (fx1 - fx0) + gx1
         ofc = ofn.OFNumber.init_trapezoid_x0x1(fx0, fx1, gx0, gx1, dim=params['dim'], domain_x=params['domain_x'])
     else:
         fx0 = np.max(new_price) + c2
         fx1 = s2
         gx1 = s1
-        gx0 = (field_b / field_a) * (fx1 - fx0) + gx1
+        if field_a < 1.0e-6:
+            gx0 = gx1
+        else:
+            gx0 = (field_b / field_a) * (fx1 - fx0) + gx1
         ofc = ofn.OFNumber.init_trapezoid_x0x1(fx0, fx1, gx0, gx1, dim=params['dim'], domain_x=params['domain_x'])
     return ofc, s1, s2, c1, c2, field_a, field_b
 
@@ -171,13 +177,19 @@ def compute_gauss(price, volume, spread, params):
         mf = s1
         sf = (np.min(new_price) - c1 - s1) / (np.sqrt(-2 * np.log(xmin)))
         mg = s2
-        sg = -(field_a / field_b) * sf
+        if field_b < 1.0e-6:
+            sg = 0
+        else:
+            sg = -(field_a / field_b) * sf
         ofc = ofn.OFNumber.init_gaussian(mf, sf, mg, sg, dim=params['dim'], domain_x=params['domain_x'])
     else:
         mf = s2
         sf = (np.max(new_price) + c1 - s2) / (np.sqrt(-2 * np.log(xmin)))
         mg = s1
-        sg = -(field_b / field_a) * sf
+        if field_a < 1.0e-6:
+            sg = 0
+        else:
+            sg = -(field_b / field_a) * sf
         ofc = ofn.OFNumber.init_gaussian(mf, sf, mg, sg, dim=params['dim'], domain_x=params['domain_x'])
     return ofc, s1, s2, c1, c2, field_a, field_b
 
