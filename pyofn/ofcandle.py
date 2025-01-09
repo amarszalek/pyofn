@@ -18,7 +18,8 @@ class OFCandle(ofn.OFNumber):
                    'param_s': 'average', 'lw_average', 'ew_average', 'mix_average',
                    'param_c': 'none', 'std', 'volatility',
                    'dim': int,
-                   'domain_x': 1-dim array or None
+                   'domain_x': 1-dim array or None,
+                   'eps': min value for division field a and b,
                    'order': function or None}
     """
     def __init__(self, ctype, data, params):
@@ -150,7 +151,7 @@ def compute_linear(price, volume, spread, params):
         fx0 = np.min(new_price) - c1
         fx1 = s1
         gx1 = s2
-        if field_b < 1.0e-6:
+        if field_b < params['eps']:
             gx0 = gx1
         else:
             gx0 = (field_a / field_b) * (fx1 - fx0) + gx1
@@ -159,7 +160,7 @@ def compute_linear(price, volume, spread, params):
         fx0 = np.max(new_price) + c2
         fx1 = s2
         gx1 = s1
-        if field_a < 1.0e-6:
+        if field_a < params['eps']:
             gx0 = gx1
         else:
             gx0 = (field_b / field_a) * (fx1 - fx0) + gx1
@@ -177,7 +178,7 @@ def compute_gauss(price, volume, spread, params):
         mf = s1
         sf = (np.min(new_price) - c1 - s1) / (np.sqrt(-2 * np.log(xmin)))
         mg = s2
-        if field_b < 1.0e-6:
+        if field_b < params['eps']:
             sg = 0
         else:
             sg = -(field_a / field_b) * sf
@@ -186,7 +187,7 @@ def compute_gauss(price, volume, spread, params):
         mf = s2
         sf = (np.max(new_price) + c1 - s2) / (np.sqrt(-2 * np.log(xmin)))
         mg = s1
-        if field_a < 1.0e-6:
+        if field_a < params['eps']:
             sg = 0
         else:
             sg = -(field_b / field_a) * sf
