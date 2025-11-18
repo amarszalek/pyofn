@@ -392,10 +392,10 @@ class OrderBook(object):
 
         return ob
 
-    def clear_orderbook(self):  # F
+    def clear_orderbook(self, ctime=None, nmsg=None):  # F
         """
         Czyści bieżącą instancję OrderBook (in-place),
-        usuwając wszystkie zlecenia i resetując metadane.
+        usuwając wszystkie zlecenia i resetując metadane (lub nie).
         """
         # Wyczyść struktury L3 i L2
         self.order_map.clear()
@@ -403,8 +403,8 @@ class OrderBook(object):
         self.sell_book.clear()
 
         # Zresetuj metadane
-        self.current_time = None
-        self.nmsg = 0
+        self.current_time = ctime
+        self.nmsg = nmsg if nmsg is not None else self.nmsg+1
 
     def add_order(self, order):  # A
         key = self._get_key(order)
