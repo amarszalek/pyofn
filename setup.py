@@ -3,7 +3,10 @@ from setuptools import setup, find_packages
 with open("README.md", "r") as readme_file:
     readme = readme_file.read()
 
-requirements = ['numpy', 'scipy', 'pandas', 'matplotlib', 'setuptools']
+requirements = []
+with open("requirements.txt", "r") as reqs_file:
+    for line in reqs_file:
+        requirements.append(line.strip())
 
 
 setup(

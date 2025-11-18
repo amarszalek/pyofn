@@ -3,5 +3,5 @@ scipy
 matplotlib
 pandas
 setuptools
-
-
+sortedcontainers
+pyarrow

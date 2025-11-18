@@ -85,8 +85,12 @@ def _func_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
     ts9 = ts9.replace(hour=9, minute=0, second=0, microsecond=0)
     ts1650 = deepcopy(stamp)
     ts1650 = ts1650.replace(hour=16, minute=50, second=0, microsecond=0)
-    if ob2.current_time < ts9 or ob2.current_time >= ts1650:
-        return 'Empty'
+    try:
+        if ob2.current_time < ts9 or ob2.current_time >= ts1650:
+            return 'Empty'
+    except Exception as e:
+        print(e, stamp, ob2.current_time)
+        raise e
 
     if 0.0 in ob2.buy_book or 0.0 in ob2.sell_book:
         return 'Empty'
@@ -185,7 +189,8 @@ class OrderBook(object):
             batch_data.append(order_with_time)
         return batch_data
 
-    def restore_order_map(self, batch_data):
+    @staticmethod
+    def restore_order_map(batch_data):
         ob_restored = OrderBook(verbose=False)
         ob_restored.current_time = batch_data[0]['snapshot_timestamp']
         ob_restored.nmsg = batch_data[0]['snapshot_nmsg']
