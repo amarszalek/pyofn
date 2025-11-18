@@ -403,8 +403,10 @@ class OrderBook(object):
         self.sell_book.clear()
 
         # Zresetuj metadane
-        self.current_time = ctime
-        self.nmsg = nmsg if nmsg is not None else self.nmsg+1
+        if ctime is not None:
+            self.current_time = ctime
+        if nmsg is not None:
+            self.nmsg = nmsg
 
     def add_order(self, order):  # A
         key = self._get_key(order)
