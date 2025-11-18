@@ -95,7 +95,7 @@ def _func_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
     if 0.0 in ob2.buy_book or 0.0 in ob2.sell_book:
         return 'Empty'
 
-    ob3 = ob2.reduce_to_nlevels(nlevels=nlevels)
+    ob3 = ob2.reduce_to_nlevels(nlevels=nlevels, mode='gpw')
 
     if (obs_prev is None) or (not ob3.isthesame_l3(obs_prev)):
         obs_prev = deepcopy(ob3)
@@ -349,7 +349,7 @@ class OrderBook(object):
         d['sell_volumes'] = deepcopy(bests['best_sell_volumes'])
         return d
 
-    def reduce_to_nlevels(self, nlevels=10):
+    def reduce_to_nlevels(self, nlevels=10, mode=None):
         """
         Zwraca nową instancję OrderBook zredukowaną do 'n' najlepszych poziomów
         lub do procentowego odchylenia od best bid/ask.
@@ -364,17 +364,32 @@ class OrderBook(object):
             bests = ob.get_bests(num=nlevels)
             if bests['best_sell_prices'].size > 0:
                 price_up = bests['best_sell_prices'][-1]
+                if bests['best_sell_prices'][0] < 0.2:
+                    price_up = bests['best_sell_prices'][0] + 0.02
+                elif bests['best_sell_prices'][0] < 0.3:
+                    price_up = bests['best_sell_prices'][0] + 0.03
             if bests['best_buy_prices'].size > 0:
                 price_down = bests['best_buy_prices'][-1]
+                if bests['best_buy_prices'][0] < 0.2:
+                    price_down = bests['best_buy_prices'][0] - 0.02
+                elif bests['best_buy_prices'][0] < 0.3:
+                    price_down = bests['best_buy_prices'][0] - 0.03
         else:
             bests = ob.get_bests(num=1)
             if bests['best_sell_prices'].size > 0:
                 best_ask = bests['best_sell_prices'][0]
                 price_up = (1 + nlevels) * best_ask
-
+                if bests['best_sell_prices'][0] < 0.2:
+                    price_up = bests['best_sell_prices'][0] + 0.02
+                elif bests['best_sell_prices'][0] < 0.3:
+                    price_up = bests['best_sell_prices'][0] + 0.03
             if bests['best_buy_prices'].size > 0:
                 best_bid = bests['best_buy_prices'][0]
                 price_down = (1 - nlevels) * best_bid
+                if bests['best_buy_prices'][0] < 0.2:
+                    price_down = bests['best_buy_prices'][0] - 0.02
+                elif bests['best_buy_prices'][0] < 0.3:
+                    price_down = bests['best_buy_prices'][0] - 0.03
 
         sell_prices_to_remove = [p for p in ob.sell_book.keys() if p > price_up]
         for price in sell_prices_to_remove:
