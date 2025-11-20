@@ -364,16 +364,8 @@ class OrderBook(object):
             bests = ob.get_bests(num=nlevels)
             if bests['best_sell_prices'].size > 0:
                 price_up = bests['best_sell_prices'][-1]
-                if bests['best_sell_prices'][0] < 0.2:
-                    price_up = bests['best_sell_prices'][0] + 0.02
-                elif bests['best_sell_prices'][0] < 0.3:
-                    price_up = bests['best_sell_prices'][0] + 0.03
             if bests['best_buy_prices'].size > 0:
                 price_down = bests['best_buy_prices'][-1]
-                if bests['best_buy_prices'][0] < 0.2:
-                    price_down = bests['best_buy_prices'][0] - 0.02
-                elif bests['best_buy_prices'][0] < 0.3:
-                    price_down = bests['best_buy_prices'][0] - 0.03
         else:
             bests = ob.get_bests(num=1)
             if bests['best_sell_prices'].size > 0:
