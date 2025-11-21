@@ -7,6 +7,7 @@ from sortedcontainers import SortedDict
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from collections import defaultdict
+from itertools import chain
 
 
 def worker_min_func_gpw(key, fdata, freq, nlevels, target, batch_size):
@@ -35,7 +36,7 @@ def worker_min_func_gpw(key, fdata, freq, nlevels, target, batch_size):
         r = _func_min_obooks_gpw(g, ob, nlevels, ob_prev, current_batch_cols)
         if r != 'Empty':
             n+=1
-            ob_prev = deepcopy(r)
+            ob_prev = r
             current_rows_count = len(current_batch_cols['order_id'])
             if (batch_size>0) and (current_rows_count >= batch_size):
                 table_batch = pa.Table.from_pydict(current_batch_cols)
@@ -254,7 +255,7 @@ class MinOrderBook(object):
         snapshot_time = self.current_time
         snapshot_nmsg = self.nmsg
 
-        for order in list(self.buy_map.values()) + list(self.sell_map.values()):
+        for order in chain(self.buy_map.values(), self.sell_map.values()):
             cols['order_date'].append(order.get('order_date'))
             cols['order_id'].append(order.get('order_id'))
             cols['price'].append(order.get('price'))
@@ -376,12 +377,19 @@ class MinOrderBook(object):
 
     def mod_order(self, order):  # M
         key = self._get_key(order)
+        side = order.get('side')
 
-        existing = self.buy_map.get(key)
-        target_map = self.buy_map
-        if existing is None:
+        if order['side'] == 1:
+            existing = self.buy_map.get(key)
+        elif order['side'] in [2, 5]:
             existing = self.sell_map.get(key)
-            target_map = self.sell_map
+        else:
+            existing = None
+
+        if existing is None:
+            existing = self.buy_map.get(key)
+            if existing is None:
+                existing = self.sell_map.get(key)
 
         if existing is None:
             self.add_order(order)  # Jeśli nie ma, to dodaj
