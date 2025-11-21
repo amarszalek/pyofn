@@ -7,6 +7,106 @@ from sortedcontainers import SortedDict
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
+
+def worker_min_func_gpw(key, fdata, freq, nlevels, target, batch_size):
+    df = pd.read_hdf(fdata, key)
+    ob = MinOrderBook()
+    ob_prev = None
+    df['time'] = (pd.to_datetime(df['time'], unit='ns', utc=True)).dt.tz_convert('Europe/Warsaw')
+    df['priority_date'] = (pd.to_datetime(df['priority_date'], unit='ns', utc=True)).dt.tz_convert('Europe/Warsaw')
+    df['order_date'] = (pd.to_datetime(df['order_date'], unit='ns', utc=True)).dt.tz_convert('Europe/Warsaw')
+    df['price'] = df['price'] / (10**df['price_level'])
+    #df = df.sort_values(by='time')
+
+    target_fn = target + (fdata.split(r'/')[-1]).split('.')[0] + '_' + key[1:] + f'_{freq}_{nlevels}.parquet'
+    writer = None
+    schema = None
+    all_orders_data = []
+    n = 0
+    if 'all' in freq:
+        dre = (df.set_index('time')).groupby('time')
+    else:
+        dre = (df.set_index('time')).resample(freq)
+    for t, g in dre:
+        r = _func_min_obooks_gpw(g, ob, nlevels, ob_prev, all_orders_data)
+        if r != 'Empty':
+            n+=1
+            if (batch_size>0) and (len(all_orders_data) >= batch_size):
+                # Konwertuj partię na DataFrame i potem na Tabelę PyArrow
+                df_batch = pd.DataFrame(all_orders_data)
+                table_batch = pa.Table.from_pandas(df_batch)
+
+                if writer is None:
+                    # Pierwszy zapis: stwórz schemat i otwórz writer
+                    # Schemat jest pobierany z pierwszej partii i musi być taki sam dla reszty
+                    schema = table_batch.schema
+                    writer = pq.ParquetWriter(target_fn, schema=schema, compression='snappy')
+
+                writer.write_table(table_batch)
+                all_orders_data.clear()
+
+    if all_orders_data:
+        df_final = pd.DataFrame(all_orders_data)
+        table_final = pa.Table.from_pandas(df_final)
+        if writer is None:
+            schema = table_final.schema
+            writer = pq.ParquetWriter(target_fn, schema=schema, compression='snappy')
+
+        writer.write_table(table_final)
+        all_orders_data.clear()
+
+    if writer:
+        writer.close()
+
+    return n
+
+
+def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
+    if len(df) < 1:
+        return 'Empty'
+    for i, row in df.iterrows():
+        stamp = i
+        ob2.current_time = deepcopy(stamp)
+        ob2.nmsg += 1
+
+        if row.action_type == 'F':
+            ob2.clear_orderbook()
+        elif row.action_type == 'Y':
+            ob2.retransmit_order(row)
+        elif row.action_type == 'A':
+            ob2.add_order(row)
+        elif row.action_type == 'M':
+            ob2.mod_order(row)
+        elif row.action_type == 'D':
+            ob2.del_order(row)
+        else:
+            raise ValueError('unsupported action_type')
+
+    ts9 = deepcopy(stamp)
+    ts9 = ts9.replace(hour=9, minute=0, second=0, microsecond=0)
+    ts1650 = deepcopy(stamp)
+    ts1650 = ts1650.replace(hour=16, minute=50, second=0, microsecond=0)
+    try:
+        if ob2.current_time < ts9 or ob2.current_time >= ts1650:
+            return 'Empty'
+    except Exception as e:
+        print(e, stamp, ob2.current_time)
+        raise e
+
+    if ob2.has_zero_price():
+        return 'Empty'
+
+    ob3 = ob2.reduce_to_nlevels(nlevels=nlevels)
+
+    if (obs_prev is None) or (not ob3.isthesame(obs_prev)):
+        obs_prev = deepcopy(ob3)
+
+        batch = ob3.flat_order_map()
+        all_orders_data.extend(batch)
+    else:
+        return 'Empty'
+
+
 def worker_func_gpw(key, fdata, freq, nlevels, target, batch_size):
     df = pd.read_hdf(fdata, key)
     ob = OrderBook()
@@ -104,6 +204,195 @@ def _func_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
         all_orders_data.extend(batch)
     else:
         return 'Empty'
+
+
+class MinOrderBook(object):
+    def __init__(self, data=None):
+        super(MinOrderBook, self).__init__()
+
+        self.buy_map = {}
+        self.sell_map = {}
+        self.current_time = None
+        self.nmsg = 0
+
+        if data is not None:
+            try:
+                self.restore_order_map(data)
+            except KeyError as e:
+                print(f"Błąd ładowania danych: Brak oczekiwanego klucza w słowniku 'data': {e}")
+            except Exception as e:
+                print(f"Wystąpił nieoczekiwany błąd podczas ładowania danych: {e}")
+
+    def flat_order_map(self):
+        batch_data = []
+        snapshot_time = self.current_time
+        snapshot_nmsg = self.nmsg
+        for order in self.buy_map.values():
+            order_with_time = order.copy()
+            order_with_time['snapshot_timestamp'] = snapshot_time
+            order_with_time['snapshot_nmsg'] = snapshot_nmsg
+            batch_data.append(order_with_time)
+        for order in self.sell_map.values():
+            order_with_time = order.copy()
+            order_with_time['snapshot_timestamp'] = snapshot_time
+            order_with_time['snapshot_nmsg'] = snapshot_nmsg
+            batch_data.append(order_with_time)
+        return batch_data
+
+    @staticmethod
+    def restore_order_map(batch_data):
+        ob_restored = MinOrderBook()
+        ob_restored.current_time = batch_data[0]['snapshot_timestamp']
+        ob_restored.nmsg = batch_data[0]['snapshot_nmsg']
+        for order_dict in batch_data:
+            del order_dict['snapshot_timestamp']
+            del order_dict['snapshot_nmsg']
+            ob_restored.add_order(order_dict)
+        return ob_restored
+
+    def copy(self):
+        return deepcopy(self)
+
+    def isempty(self):
+        if len(self.buy_map) == 0 and len(self.sell_map) == 0:
+            return True
+        return False
+
+    def has_zero_price(self):
+        """
+        Sprawdza, czy w order_map znajduje się jakiekolwiek zlecenie z ceną 0.0.
+        Zwraca True, jeśli znajdzie takie zlecenie, w przeciwnym razie False.
+        """
+
+        buy = any(order.get('price') == 0.0 for order in self.buy_map.values())
+        sell = any(order.get('price') == 0.0 for order in self.sell_map.values())
+        zero = buy or sell
+
+        return zero
+
+    def isthesame(self, other):
+        """
+        Sprawdza, czy stan L3 (każde pojedyncze zlecenie)
+        tej księgi jest identyczny ze stanem księgi ob2.
+        """
+        return (self.buy_map == other.buy_map) and (self.sell_map == other.sell_map)
+
+    def clear_orderbook(self, ctime=None, nmsg=None):  # F
+        """
+        Czyści bieżącą instancję OrderBook (in-place),
+        usuwając wszystkie zlecenia i resetując metadane (lub nie).
+        """
+        # Wyczyść struktury L3 i L2
+        self.buy_map.clear()
+        self.sell_map.clear()
+        # Zresetuj metadane
+        if ctime is not None:
+            self.current_time = ctime
+        if nmsg is not None:
+            self.nmsg = nmsg
+
+    def _get_key(self, order):
+        """Helper do tworzenia unikalnego klucza zlecenia."""
+        return order['order_date'], order['order_id']
+
+    def add_order(self, order):  # A
+        key = self._get_key(order)
+        side = order['side']
+
+        if side == 1:
+            if key not in self.buy_map:
+                self.buy_map[key] = order
+        elif side in [2, 5]:
+            if key not in self.sell_map:
+                self.sell_map[key] = order
+
+    def del_order(self, order):  # D
+        key = self._get_key(order)
+        side = order['side']
+
+        if side == 1:
+            self.buy_map.pop(key, None)
+        elif side in [2, 5]:
+            self.sell_map.pop(key, None)
+
+
+    def mod_order(self, order):  # M
+        key = self._get_key(order)
+
+        existing = self.buy_map.get(key)
+        target_map = self.buy_map
+        if existing is None:
+            existing = self.sell_map.get(key)
+            target_map = self.sell_map
+
+        if existing is None:
+            self.add_order(order)  # Jeśli nie ma, to dodaj
+            return
+
+        # Update in-place
+        for k, v in order.items():
+            if v != -1:
+                existing[k] = v
+
+    def retransmit_order(self, order):  # Y
+        try:
+            self.mod_order(order)
+        except ValueError:
+            self.add_order(order)
+
+    def reduce_to_nlevels(self, nlevels=10):
+        """
+        Zwraca nową instancję MinOrderBook zredukowaną do 'n' najlepszych poziomów
+        lub do procentowego odchylenia od best bid/ask.
+        """
+        ob = deepcopy(self)  # Kopia całej struktury
+        if ob.isempty():
+            return ob
+
+        # Wyciągamy ceny
+        unique_buys = sorted({o['price'] for o in ob.buy_map.values()}, reverse=True)
+        unique_sells = sorted({o['price'] for o in ob.sell_map.values()})
+
+        price_up = float('inf')
+        price_down = float('-inf')
+
+        # Wyznaczanie progów (logika identyczna, ale kod czystszy)
+        if isinstance(nlevels, int):
+            if unique_sells:
+                idx = min(nlevels, len(unique_sells)) - 1
+                price_up = unique_sells[idx]
+            if unique_buys:
+                idx = min(nlevels, len(unique_buys)) - 1
+                price_down = unique_buys[idx]
+        else:
+            # Logika procentowa (skrócona dla przykładu)
+            if unique_sells:
+                best_ask = unique_sells[0]
+                price_up = best_ask * (1 + nlevels)
+                # Specyficzne reguły dla niskich cen
+                if best_ask < 0.2:
+                    price_up = best_ask + 0.02
+                elif best_ask < 0.3:
+                    price_up = best_ask + 0.03
+            if unique_buys:
+                best_bid = unique_buys[0]
+                price_down = best_bid * (1 - nlevels)
+                # Specyficzne reguły dla niskich cen
+                if best_bid < 0.2:
+                    price_down = best_bid - 0.02
+                elif best_bid < 0.3:
+                    price_down = best_bid - 0.03
+
+        # Czyścimy Sells
+        keys_to_del = [k for k, o in ob.sell_map.items() if o['price'] > price_up]
+        for k in keys_to_del:
+            del ob.sell_map[k]
+        # Czyścimy Buys
+        keys_to_del = [k for k, o in ob.buy_map.items() if o['price'] < price_down]
+        for k in keys_to_del:
+            del ob.buy_map[k]
+
+        return ob
 
 
 class OrderBook(object):
