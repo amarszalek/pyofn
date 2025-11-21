@@ -105,7 +105,7 @@ def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, current_batch_cols):
     ob3 = ob2.reduce_to_nlevels(nlevels=nlevels)
 
     if (obs_prev is None) or (not ob3.isthesame(obs_prev)):
-        batch_cols = ob3.flat_order_map_columnar()
+        batch_cols = ob3.flat_order_map()
         for col_name, col_values in batch_cols.items():
             current_batch_cols[col_name].extend(col_values)
         return ob3
