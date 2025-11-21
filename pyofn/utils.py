@@ -73,18 +73,20 @@ def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, current_batch_cols):
         ob2.current_time = deepcopy(stamp)
         ob2.nmsg += 1
 
+        order_dict = row.to_dict()
+
         if row.action_type == 'F':
             ob2.clear_orderbook()
         elif row.action_type == 'Y':
-            ob2.retransmit_order(row)
+            ob2.retransmit_order(order_dict)
         elif row.action_type == 'A':
-            ob2.add_order(row)
+            ob2.add_order(order_dict)
         elif row.action_type == 'M':
-            ob2.mod_order(row)
+            ob2.mod_order(order_dict)
         elif row.action_type == 'D':
-            ob2.del_order(row)
+            ob2.del_order(order_dict)
         else:
-            raise ValueError('unsupported action_type')
+            raise ValueError(f"unsupported action_type: {row.action_type}")
 
     ts9 = deepcopy(stamp)
     ts9 = ts9.replace(hour=9, minute=0, second=0, microsecond=0)
