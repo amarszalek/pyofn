@@ -6,6 +6,7 @@ from copy import deepcopy
 from sortedcontainers import SortedDict
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from collections import defaultdict
 
 
 def worker_min_func_gpw(key, fdata, freq, nlevels, target, batch_size):
@@ -21,39 +22,41 @@ def worker_min_func_gpw(key, fdata, freq, nlevels, target, batch_size):
     target_fn = target + (fdata.split(r'/')[-1]).split('.')[0] + '_' + key[1:] + f'_{freq}_{nlevels}.parquet'
     writer = None
     schema = None
-    all_orders_data = []
+
+    current_batch_cols = defaultdict(list)
+    current_rows_count = 0  # Licznik wierszy do batch_size
+
     n = 0
     if 'all' in freq:
         dre = (df.set_index('time')).groupby('time')
     else:
         dre = (df.set_index('time')).resample(freq)
     for t, g in dre:
-        r = _func_min_obooks_gpw(g, ob, nlevels, ob_prev, all_orders_data)
+        r = _func_min_obooks_gpw(g, ob, nlevels, ob_prev, current_batch_cols)
         if r != 'Empty':
             n+=1
-            if (batch_size>0) and (len(all_orders_data) >= batch_size):
-                # Konwertuj partię na DataFrame i potem na Tabelę PyArrow
-                df_batch = pd.DataFrame(all_orders_data)
-                table_batch = pa.Table.from_pandas(df_batch)
-
+            ob_prev = deepcopy(r)
+            current_rows_count = len(current_batch_cols['order_id'])
+            if (batch_size>0) and (current_rows_count >= batch_size):
+                table_batch = pa.Table.from_pydict(current_batch_cols)
                 if writer is None:
-                    # Pierwszy zapis: stwórz schemat i otwórz writer
-                    # Schemat jest pobierany z pierwszej partii i musi być taki sam dla reszty
                     schema = table_batch.schema
                     writer = pq.ParquetWriter(target_fn, schema=schema, compression='snappy')
 
                 writer.write_table(table_batch)
-                all_orders_data.clear()
 
-    if all_orders_data:
-        df_final = pd.DataFrame(all_orders_data)
-        table_final = pa.Table.from_pandas(df_final)
+                current_batch_cols = defaultdict(list)
+                current_rows_count = 0
+
+    if current_batch_cols:
+        table_batch = pa.Table.from_pydict(current_batch_cols)
         if writer is None:
-            schema = table_final.schema
+            schema = table_batch.schema
             writer = pq.ParquetWriter(target_fn, schema=schema, compression='snappy')
 
-        writer.write_table(table_final)
-        all_orders_data.clear()
+        writer.write_table(table_batch)
+        current_batch_cols = defaultdict(list)
+        current_rows_count = 0
 
     if writer:
         writer.close()
@@ -61,7 +64,7 @@ def worker_min_func_gpw(key, fdata, freq, nlevels, target, batch_size):
     return n
 
 
-def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
+def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, current_batch_cols):
     if len(df) < 1:
         return 'Empty'
     for i, row in df.iterrows():
@@ -93,16 +96,19 @@ def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
         print(e, stamp, ob2.current_time)
         raise e
 
+    if ob2.isempty():
+        return 'Empty'
+
     if ob2.has_zero_price():
         return 'Empty'
 
     ob3 = ob2.reduce_to_nlevels(nlevels=nlevels)
 
     if (obs_prev is None) or (not ob3.isthesame(obs_prev)):
-        obs_prev = deepcopy(ob3)
-
-        batch = ob3.flat_order_map()
-        all_orders_data.extend(batch)
+        batch_cols = ob3.flat_order_map_columnar()
+        for col_name, col_values in batch_cols.items():
+            current_batch_cols[col_name].extend(col_values)
+        return ob3
     else:
         return 'Empty'
 
@@ -223,7 +229,7 @@ class MinOrderBook(object):
             except Exception as e:
                 print(f"Wystąpił nieoczekiwany błąd podczas ładowania danych: {e}")
 
-    def flat_order_map(self):
+    def flat_order_map_old(self):
         batch_data = []
         snapshot_time = self.current_time
         snapshot_nmsg = self.nmsg
@@ -239,8 +245,29 @@ class MinOrderBook(object):
             batch_data.append(order_with_time)
         return batch_data
 
+    def flat_order_map(self):
+        cols = {
+            'order_date': [], 'order_id': [], 'price': [], 'volume': [],
+            'side': [], 'order_type': [], 'priority_date': [],
+            'snapshot_timestamp': [], 'snapshot_nmsg': []
+        }
+        snapshot_time = self.current_time
+        snapshot_nmsg = self.nmsg
+
+        for order in list(self.buy_map.values()) + list(self.sell_map.values()):
+            cols['order_date'].append(order.get('order_date'))
+            cols['order_id'].append(order.get('order_id'))
+            cols['price'].append(order.get('price'))
+            cols['volume'].append(order.get('volume'))
+            cols['side'].append(order.get('side'))
+            cols['order_type'].append(order.get('order_type'))
+            cols['priority_date'].append(order.get('priority_date'))
+            cols['snapshot_timestamp'].append(snapshot_time)
+            cols['snapshot_nmsg'].append(snapshot_nmsg)
+        return cols
+
     @staticmethod
-    def restore_order_map(batch_data):
+    def restore_order_map_old(batch_data):
         ob_restored = MinOrderBook()
         ob_restored.current_time = batch_data[0]['snapshot_timestamp']
         ob_restored.nmsg = batch_data[0]['snapshot_nmsg']
@@ -248,6 +275,37 @@ class MinOrderBook(object):
             del order_dict['snapshot_timestamp']
             del order_dict['snapshot_nmsg']
             ob_restored.add_order(order_dict)
+        return ob_restored
+
+    @staticmethod
+    def restore_order_map(batch_data):
+        """
+        Odtwarza instancję klasy z danych w formacie kolumnowym (słownik list).
+        Jest to operacja odwrotna do flat_order_map_columnar.
+        """
+        ob_restored = MinOrderBook()
+
+        # Sprawdzenie czy są jakiekolwiek dane (czy lista 'order_id' istnieje i nie jest pusta)
+        if not batch_data or 'order_id' not in batch_data or not batch_data['order_id']:
+            return ob_restored
+
+        # Odtworzenie metadanych globalnych
+        ob_restored.current_time = batch_data['snapshot_timestamp'][0]
+        ob_restored.nmsg = batch_data['snapshot_nmsg'][0]
+
+        # Przygotowanie kluczy do rekonstrukcji zleceń
+        meta_keys = {'snapshot_timestamp', 'snapshot_nmsg'}
+        order_keys = [k for k in batch_data.keys() if k not in meta_keys]
+
+        # Transpozycja (Kolumny -> Wiersze)
+        # Pobieramy listy wartości dla wybranych kluczy
+        data_arrays = [batch_data[k] for k in order_keys]
+
+        # Funkcja zip(*data_arrays) "zszywa" listy równolegle, tworząc krotki wierszy.
+        for row_values in zip(*data_arrays):
+            order_dict = dict(zip(order_keys, row_values))
+            ob_restored.add_order(order_dict)
+
         return ob_restored
 
     def copy(self):
