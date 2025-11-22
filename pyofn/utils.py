@@ -105,6 +105,9 @@ def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, current_batch_cols):
     if ob2.has_zero_price():
         return 'Empty'
 
+    if ob2.is_crossed():
+        return 'Empty'
+
     ob3 = ob2.reduce_to_nlevels(nlevels=nlevels)
 
     if (obs_prev is None) or (not ob3.isthesame(obs_prev)):
@@ -337,6 +340,23 @@ class MinOrderBook(object):
         tej księgi jest identyczny ze stanem księgi ob2.
         """
         return (self.buy_map == other.buy_map) and (self.sell_map == other.sell_map)
+
+    def is_crossed(self):
+        """
+        Sprawdza, czy arkusz jest skrzyżowany (Best Bid >= Best Ask).
+        Zwraca True, jeśli dane są niepoprawne (ujemny lub zerowy spread).
+        Zwraca False, jeśli spread jest dodatni lub brakuje jednej ze stron.
+        """
+        if not self.buy_map or not self.sell_map:
+            return False  # Nie można skrzyżować, jeśli brakuje jednej strony
+
+        # Znajdujemy Best Bid (maksymalna cena kupna)
+        best_bid = max(o['price'] for o in self.buy_map.values())
+
+        # Znajdujemy Best Ask (minimalna cena sprzedaży)
+        best_ask = min(o['price'] for o in self.sell_map.values())
+
+        return best_bid >= best_ask
 
     def clear_orderbook(self, ctime=None, nmsg=None):  # F
         """
