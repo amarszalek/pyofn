@@ -119,105 +119,6 @@ def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, current_batch_cols):
         return 'Empty'
 
 
-def worker_func_gpw(key, fdata, freq, nlevels, target, batch_size):
-    df = pd.read_hdf(fdata, key)
-    ob = OrderBook()
-    ob_prev = None
-    df['time'] = (pd.to_datetime(df['time'], unit='ns', utc=True)).dt.tz_convert('Europe/Warsaw')
-    df['priority_date'] = (pd.to_datetime(df['priority_date'], unit='ns', utc=True)).dt.tz_convert('Europe/Warsaw')
-    df['order_date'] = (pd.to_datetime(df['order_date'], unit='ns', utc=True)).dt.tz_convert('Europe/Warsaw')
-    df['price'] = df['price'] / (10**df['price_level'])
-    #df = df.sort_values(by='time')
-
-    target_fn = target + (fdata.split(r'/')[-1]).split('.')[0] + '_' + key[1:] + f'_{freq}_{nlevels}.parquet'
-    writer = None
-    schema = None
-    all_orders_data = []
-    n = 0
-    if 'all' in freq:
-        dre = (df.set_index('time')).groupby('time')
-    else:
-        dre = (df.set_index('time')).resample(freq)
-    for t, g in dre:
-        r = _func_obooks_gpw(g, ob, nlevels, ob_prev, all_orders_data)
-        if r != 'Empty':
-            n+=1
-            if (batch_size>0) and (len(all_orders_data) >= batch_size):
-                # Konwertuj partię na DataFrame i potem na Tabelę PyArrow
-                df_batch = pd.DataFrame(all_orders_data)
-                table_batch = pa.Table.from_pandas(df_batch)
-
-                if writer is None:
-                    # Pierwszy zapis: stwórz schemat i otwórz writer
-                    # Schemat jest pobierany z pierwszej partii i musi być taki sam dla reszty
-                    schema = table_batch.schema
-                    writer = pq.ParquetWriter(target_fn, schema=schema, compression='snappy')
-
-                writer.write_table(table_batch)
-                all_orders_data.clear()
-
-    if all_orders_data:
-        df_final = pd.DataFrame(all_orders_data)
-        table_final = pa.Table.from_pandas(df_final)
-        if writer is None:
-            schema = table_final.schema
-            writer = pq.ParquetWriter(target_fn, schema=schema, compression='snappy')
-
-        writer.write_table(table_final)
-        all_orders_data.clear()
-
-    if writer:
-        writer.close()
-
-    return n
-
-
-def _func_obooks_gpw(df, ob2, nlevels, obs_prev, all_orders_data):
-    if len(df) < 1:
-        return 'Empty'
-    for i, row in df.iterrows():
-        stamp = i
-        ob2.current_time = deepcopy(stamp)
-        ob2.nmsg += 1
-
-        if row.action_type == 'F':
-            ob2.clear_orderbook()
-        elif row.action_type == 'Y':
-            ob2.retransmit_order(row)
-        elif row.action_type == 'A':
-            ob2.add_order(row)
-        elif row.action_type == 'M':
-            ob2.mod_order(row)
-        elif row.action_type == 'D':
-            ob2.del_order(row)
-        else:
-            raise ValueError('unsupported action_type')
-
-    ts9 = deepcopy(stamp)
-    ts9 = ts9.replace(hour=9, minute=0, second=0, microsecond=0)
-    ts1650 = deepcopy(stamp)
-    ts1650 = ts1650.replace(hour=16, minute=50, second=0, microsecond=0)
-    try:
-        if ob2.current_time < ts9 or ob2.current_time >= ts1650:
-            return 'Empty'
-    except Exception as e:
-        print(e, stamp, ob2.current_time)
-        raise e
-
-    if 0.0 in ob2.buy_book or 0.0 in ob2.sell_book:
-        return 'Empty'
-
-    ob3 = ob2.reduce_to_nlevels(nlevels=nlevels, mode='gpw')
-
-    if (obs_prev is None) or (not ob3.isthesame_l3(obs_prev)):
-        obs_prev = deepcopy(ob3)
-
-        batch = ob3.flat_order_map()
-        all_orders_data.extend(batch)
-    else:
-        return 'Empty'
-
-
 class MinOrderBook(object):
     def __init__(self, data=None):
         super(MinOrderBook, self).__init__()
@@ -380,6 +281,16 @@ class MinOrderBook(object):
         key = self._get_key(order)
         side = order['side']
 
+        if order['side'] == 1:
+            existing = self.buy_map.get(key)
+        elif order['side'] in [2, 5]:
+            existing = self.sell_map.get(key)
+        else:
+            existing = None
+
+        if existing is not None:
+            raise KeyError('Order already exists')
+
         if side == 1:
             if key not in self.buy_map:
                 self.buy_map[key] = order
@@ -390,6 +301,16 @@ class MinOrderBook(object):
     def del_order(self, order):  # D
         key = self._get_key(order)
         side = order['side']
+
+        if order['side'] == 1:
+            existing = self.buy_map.get(key)
+        elif order['side'] in [2, 5]:
+            existing = self.sell_map.get(key)
+        else:
+            existing = None
+
+        if existing is None:
+            raise KeyError('Order not exists')
 
         if side == 1:
             self.buy_map.pop(key, None)
@@ -414,8 +335,9 @@ class MinOrderBook(object):
                 existing = self.sell_map.get(key)
 
         if existing is None:
-            self.add_order(order)  # Jeśli nie ma, to dodaj
-            return
+            raise KeyError('Order not exists')
+            #self.add_order(order)  # Jeśli nie ma, to dodaj
+            #return
 
         # Update in-place
         for k, v in order.items():

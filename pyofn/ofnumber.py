@@ -19,11 +19,11 @@ class Branch(object):
     
     # str() method
     def __str__(self):
-        return str(self.fvalue_y)
+        return str(self.to_array())
     
     # repr() method
     def __repr__(self):
-        return str(self.fvalue_y)
+        return str(self.to_array())
     
     # initialize branch of linear type y = a * x + b
     @staticmethod
@@ -79,14 +79,15 @@ class Branch(object):
         return deepcopy(self)
     
     # to_array method
-    def to_array(self):
-        return self.fvalue_y.copy()
+    def to_array(self, axis=0):
+        return np.stack([self.fvalue_y, self.domain_x], axis=axis)
 
     # add method left side
     def __add__(self, right):
         res = self.copy()
         if isinstance(right, Branch):
-            assert np.all(res.domain_x == right.domain_x), 'self.domain_x and right.domain_x must be the same'
+            if not np.array_equal(res.domain_x, right.domain_x):
+                right = right.change_domain(res.domain_x)
             res.fvalue_y = res.fvalue_y + right.fvalue_y
         elif isscalar(right):
             res.fvalue_y = res.fvalue_y + right
@@ -96,11 +97,16 @@ class Branch(object):
 
     # add method right side
     def __radd__(self, left):
-        res = self.copy()
         if isinstance(left, Branch):
-            assert np.all(res.domain_x == left.domain_x), 'self.domain_x and left.domain_x must be the same'
+            if not np.array_equal(self.domain_x, left.domain_x):
+                res = self.change_domain(left.domain_x)
+            else:
+                res = self.copy()
             res.fvalue_y = res.fvalue_y + left.fvalue_y
-        elif isscalar(left):
+            return res
+
+        res = self.copy()
+        if isscalar(left):
             res.fvalue_y = res.fvalue_y + left
         else:
             raise ValueError('left must be instance of Branch class or scalar')
@@ -110,7 +116,8 @@ class Branch(object):
     def __sub__(self, right):
         res = self.copy()
         if isinstance(right, Branch):
-            assert np.all(res.domain_x == right.domain_x), 'self.domain_x and right.domain_x must be the same'
+            if not np.array_equal(res.domain_x, right.domain_x):
+                right = right.change_domain(res.domain_x)
             res.fvalue_y = res.fvalue_y - right.fvalue_y
         elif isscalar(right):
             res.fvalue_y = res.fvalue_y - right
@@ -120,11 +127,16 @@ class Branch(object):
 
     # sub method right side
     def __rsub__(self, left):
-        res = self.copy()
         if isinstance(left, Branch):
-            assert np.all(res.domain_x == left.domain_x), 'self.domain_x and left.domain_x must be the same'
+            if not np.array_equal(self.domain_x, left.domain_x):
+                res = self.change_domain(left.domain_x)
+            else:
+                res = self.copy()
             res.fvalue_y = left.fvalue_y - res.fvalue_y
-        elif isscalar(left):
+            return res
+
+        res = self.copy()
+        if isscalar(left):
             res.fvalue_y = left - res.fvalue_y
         else:
             raise ValueError('left must be instance of Branch class or scalar')
@@ -134,7 +146,8 @@ class Branch(object):
     def __mul__(self, right):
         res = self.copy()
         if isinstance(right, Branch):
-            assert np.all(res.domain_x == right.domain_x), 'self.domain_x and right.domain_x must be the same'
+            if not np.array_equal(res.domain_x, right.domain_x):
+                right = right.change_domain(res.domain_x)
             res.fvalue_y = res.fvalue_y * right.fvalue_y
         elif isscalar(right):
             res.fvalue_y = res.fvalue_y * right
@@ -144,11 +157,16 @@ class Branch(object):
 
     # mul method right side
     def __rmul__(self, left):
-        res = self.copy()
         if isinstance(left, Branch):
-            assert np.all(res.domain_x == left.domain_x), 'self.domain_x and left.domain_x must be the same'
+            if not np.array_equal(self.domain_x, left.domain_x):
+                res = self.change_domain(left.domain_x)
+            else:
+                res = self.copy()
             res.fvalue_y = res.fvalue_y * left.fvalue_y
-        elif isscalar(left):
+            return res
+
+        res = self.copy()
+        if isscalar(left):
             res.fvalue_y = res.fvalue_y * left
         else:
             raise ValueError('left must be instance of Branch class or scalar')
@@ -166,7 +184,10 @@ class Branch(object):
         if isinstance(right, Branch):
             if right.contains_zero():
                 raise ZeroDivisionError('division by zero')
-            assert np.all(res.domain_x == right.domain_x), 'self.domain_x and right.domain_x must be the same'
+
+            if not np.array_equal(res.domain_x, right.domain_x):
+                right = right.change_domain(res.domain_x)
+
             res.fvalue_y = res.fvalue_y / right.fvalue_y
         elif isscalar(right):
             if right == 0.:
@@ -180,11 +201,17 @@ class Branch(object):
     def __rtruediv__(self, left):
         if self.contains_zero():
             raise ZeroDivisionError('division by zero')
-        res = self.copy()
+
         if isinstance(left, Branch):
-            assert np.all(res.domain_x == left.domain_x), 'self.domain_x and left.domain_x must be the same'
+            if not np.array_equal(self.domain_x, left.domain_x):
+                res = self.change_domain(left.domain_x)
+            else:
+                res = self.copy()
             res.fvalue_y = left.fvalue_y / res.fvalue_y
-        elif isscalar(left):
+            return res
+
+        res = self.copy()
+        if isscalar(left):
             res.fvalue_y = left / res.fvalue_y
         else:
             raise ValueError('left must be instance of Branch class or scalar')
@@ -235,7 +262,8 @@ class Branch(object):
     # == method
     def __eq__(self, val):
         if isinstance(val, Branch):
-            assert np.all(self.domain_x == val.domain_x), 'self.domain_x and val.domain_x must be the same'
+            if not np.array_equal(self.domain_x, val.domain_x):
+                val = val.change_domain(self.domain_x)
             return np.all(self.fvalue_y == val.fvalue_y)
         elif isscalar(val):
             return np.all(self.fvalue_y == val)
@@ -245,7 +273,8 @@ class Branch(object):
     # != method
     def __ne__(self, val):
         if isinstance(val, Branch):
-            assert np.all(self.domain_x == val.domain_x), 'self.domain_x and val.domain_x must be the same'
+            if not np.array_equal(self.domain_x, val.domain_x):
+                val = val.change_domain(self.domain_x)
             return np.all(self.fvalue_y != val.fvalue_y)
         elif isscalar(val):
             return np.all(self.fvalue_y != val)
@@ -279,22 +308,13 @@ class Branch(object):
             vmin = np.min(self.fvalue_y[k:])
             vmax = np.max(self.fvalue_y[k:])
             return np.min([fa, vmin]), np.max([fa, vmax])
-            #i = int(alpha/(self.domain_x[1]-self.domain_x[0]))
-            #xp = self.domain_x[i]
-            #xk = self.domain_x[i + 1]
-            #fp = self.fvalue_y[i]
-            #fk = self.fvalue_y[i + 1]
-            #factor = (alpha - xp) / (xk - xp)
-            #vmin = np.min(self.fvalue_y[i+1:])
-            #vmax = np.max(self.fvalue_y[i+1:])
-            #y = factor * fk + (1 - factor) * fp
-            #return np.min([y, vmin]), np.max([y, vmax])
 
     def change_domain(self, new_domain, kind='linear'):
         res = self.copy()
         new_y = res(new_domain, kind=kind)
-        res.domain_x[:] = new_domain[:]
-        res.fvalue_y[:] = new_y[:]
+        res.domain_x = np.array(new_domain, dtype=np.double)
+        res.fvalue_y = new_y
+        res.dim = len(new_y)
         return res
 
     # plot method
@@ -369,11 +389,19 @@ class OFNumber(object):
         return deepcopy(self)
     
     # to_array method
-    def to_array(self, stack='vstack'):
+    def to_array(self, stack='vstack', include_domain=False):
+        f_arr = self.branch_f.to_array()[0]
+        g_arr = self.branch_g.to_array()[0]
+        data = [f_arr, g_arr]
+        if include_domain:
+            # Zakładamy, że dziedzina jest wspólna dla f i g (standard w OFN)
+            x_arr = self.branch_f.to_array()[1]
+            data.append(x_arr)
+
         if stack == 'vstack':
-            return np.vstack([self.branch_f.to_array(), self.branch_g.to_array()])
+            return np.vstack(data)
         elif stack == 'hstack':
-            return np.hstack([self.branch_f.to_array(), self.branch_g.to_array()])
+            return np.hstack(data)
         else:
             raise ValueError('stack must be vstack or hstack')
     
@@ -385,7 +413,13 @@ class OFNumber(object):
             kwargs_g = {'c': 'k'}
         self.branch_f.plot_branch(ax, plot_as=plot_as, **kwargs_f)
         self.branch_g.plot_branch(ax, plot_as=plot_as, **kwargs_g)
-        
+
+    def change_domain(self, new_domain, kind='linear'):
+        res = self.copy()
+        res.branch_f = self.branch_f.change_domain(new_domain, kind=kind)
+        res.branch_g = self.branch_g.change_domain(new_domain, kind=kind)
+        return res
+
     # add method left side
     def __add__(self, right):
         res = self.copy()
@@ -649,6 +683,29 @@ class OFNumber(object):
         g = self.branch_g.fvalue_y
         x = self.branch_f.domain_x
         return np.sqrt(trapz(f**2, x)) + np.sqrt(trapz(g**2, x))
+
+    def distance(self, other):
+        """
+        Oblicza odległość euklidesową (L2) między dwoma liczbami OFN.
+        Wzór: d(A,B) = ||f_A - f_B||_2 + ||g_A - g_B||_2
+        """
+        if isscalar(other):
+            other = OFNumber.init_from_scalar(other, dim=self.branch_f.dim, domain_x=self.branch_f.domain_x)
+        elif not isinstance(other, OFNumber):
+            raise ValueError('Argument must be OFNumber or scalar')
+
+        # Automatyczne dopasowanie dziedzin przed obliczeniem różnicy
+        if not np.array_equal(self.branch_f.domain_x, other.branch_f.domain_x):
+            other = other.change_domain(self.branch_f.domain_x)
+
+        diff_f = self.branch_f.fvalue_y - other.branch_f.fvalue_y
+        diff_g = self.branch_g.fvalue_y - other.branch_g.fvalue_y
+
+        x = self.branch_f.domain_x
+        dist_f = np.sqrt(trapz(diff_f ** 2, x))
+        dist_g = np.sqrt(trapz(diff_g ** 2, x))
+
+        return dist_f + dist_g
     
     def liquidity_ratio(self, w_sell=1.0, w_buy=1.0):
         f = self.branch_f.fvalue_y
@@ -703,52 +760,61 @@ def fexp(ofn):
 def fpower(ofn, p):
     if (not isinstance(ofn, OFNumber)) and (not isinstance(p, OFNumber)):
         raise ValueError('at least one of arguments must be a OFNumber')
-    elif isinstance(ofn, OFNumber) and isinstance(p, OFNumber):
-        assert np.all(ofn.branch_f.domain_x == p.branch_f.domain_x), 'self.domain_x and val.domain_x must be the same'
-        domain = ofn.branch_f.domain_x
-    else:
-        domain = ofn.branch_f.domain_x if isinstance(ofn, OFNumber) else p.branch_f.domain_x
 
-    ofn_1 = OFNumber.init_from_scalar(ofn, dim=p.branch_f.dim, domain_x=domain) if isscalar(ofn) else ofn.copy()
-    ofn_2 = OFNumber.init_from_scalar(p, dim=ofn.branch_f.dim, domain_x=domain) if isscalar(p) else p.copy()
-    
+    if isinstance(ofn, OFNumber):
+        target_domain = ofn.branch_f.domain_x
+        if isinstance(p, OFNumber) and not np.array_equal(p.branch_f.domain_x, target_domain):
+            p = p.change_domain(target_domain)
+    else:
+        target_domain = p.branch_f.domain_x
+
+    ofn_1 = OFNumber.init_from_scalar(ofn, dim=len(target_domain), domain_x=target_domain) if isscalar(
+        ofn) else ofn.copy()
+    ofn_2 = OFNumber.init_from_scalar(p, dim=len(target_domain), domain_x=target_domain) if isscalar(p) else p.copy()
+
     res = ofn_1.copy()
-    res.branch_f = Branch(np.power(ofn_1.branch_f.fvalue_y, ofn_2.branch_f.fvalue_y), domain_x=domain)
-    res.branch_g = Branch(np.power(ofn_1.branch_g.fvalue_y, ofn_2.branch_g.fvalue_y), domain_x=domain)
+    res.branch_f = Branch(np.power(ofn_1.branch_f.fvalue_y, ofn_2.branch_f.fvalue_y), domain_x=target_domain)
+    res.branch_g = Branch(np.power(ofn_1.branch_g.fvalue_y, ofn_2.branch_g.fvalue_y), domain_x=target_domain)
     return res
 
 
 def fmax(ofn1, ofn2):
     if (not isinstance(ofn1, OFNumber)) and (not isinstance(ofn2, OFNumber)):
         raise ValueError('at least one of arguments must be a OFNumber')
-    elif isinstance(ofn1, OFNumber) and isinstance(ofn2, OFNumber):
-        assert np.all(ofn1.branch_f.domain_x == ofn2.branch_f.domain_x), 'self.domain_x and val.domain_x must be the same'
-        domain = ofn1.branch_f.domain_x
-    else:
-        domain = ofn1.branch_f.domain_x if isinstance(ofn1, OFNumber) else ofn2.branch_f.domain_x
 
-    ofn_1 = OFNumber.init_from_scalar(ofn1, dim=ofn2.branch_f.dim, domain_x=domain) if isscalar(ofn1) else ofn1.copy()
-    ofn_2 = OFNumber.init_from_scalar(ofn2, dim=ofn1.branch_f.dim, domain_x=domain) if isscalar(ofn2) else ofn2.copy()
+    if isinstance(ofn1, OFNumber):
+        target_domain = ofn1.branch_f.domain_x
+        if isinstance(ofn2, OFNumber) and not np.array_equal(ofn2.branch_f.domain_x, target_domain):
+            ofn2 = ofn2.change_domain(target_domain)
+    else:
+        target_domain = ofn2.branch_f.domain_x
+
+    dim = len(target_domain)
+    ofn_1 = OFNumber.init_from_scalar(ofn1, dim=dim, domain_x=target_domain) if isscalar(ofn1) else ofn1.copy()
+    ofn_2 = OFNumber.init_from_scalar(ofn2, dim=dim, domain_x=target_domain) if isscalar(ofn2) else ofn2.copy()
 
     res = ofn_1.copy()
-    res.branch_f = Branch(np.max([ofn_1.branch_f.fvalue_y, ofn_2.branch_f.fvalue_y], axis=0), domain_x=domain)
-    res.branch_g = Branch(np.max([ofn_1.branch_g.fvalue_y, ofn_2.branch_g.fvalue_y], axis=0), domain_x=domain)
+    res.branch_f = Branch(np.max([ofn_1.branch_f.fvalue_y, ofn_2.branch_f.fvalue_y], axis=0), domain_x=target_domain)
+    res.branch_g = Branch(np.max([ofn_1.branch_g.fvalue_y, ofn_2.branch_g.fvalue_y], axis=0), domain_x=target_domain)
     return res
 
 
 def fmin(ofn1, ofn2):
     if (not isinstance(ofn1, OFNumber)) and (not isinstance(ofn2, OFNumber)):
         raise ValueError('at least one of arguments must be a OFNumber')
-    elif isinstance(ofn1, OFNumber) and isinstance(ofn2, OFNumber):
-        assert np.all(ofn1.branch_f.domain_x == ofn2.branch_f.domain_x), 'self.domain_x and val.domain_x must be the same'
-        domain = ofn1.branch_f.domain_x
-    else:
-        domain = ofn1.branch_f.domain_x if isinstance(ofn1, OFNumber) else ofn2.branch_f.domain_x
 
-    ofn_1 = OFNumber.init_from_scalar(ofn1, dim=ofn2.branch_f.dim, domain_x=domain) if isscalar(ofn1) else ofn1.copy()
-    ofn_2 = OFNumber.init_from_scalar(ofn2, dim=ofn1.branch_f.dim, domain_x=domain) if isscalar(ofn2) else ofn2.copy()
+    if isinstance(ofn1, OFNumber):
+        target_domain = ofn1.branch_f.domain_x
+        if isinstance(ofn2, OFNumber) and not np.array_equal(ofn2.branch_f.domain_x, target_domain):
+            ofn2 = ofn2.change_domain(target_domain)
+    else:
+        target_domain = ofn2.branch_f.domain_x
+
+    dim = len(target_domain)
+    ofn_1 = OFNumber.init_from_scalar(ofn1, dim=dim, domain_x=target_domain) if isscalar(ofn1) else ofn1.copy()
+    ofn_2 = OFNumber.init_from_scalar(ofn2, dim=dim, domain_x=target_domain) if isscalar(ofn2) else ofn2.copy()
 
     res = ofn_1.copy()
-    res.branch_f = Branch(np.min([ofn_1.branch_f.fvalue_y, ofn_2.branch_f.fvalue_y], axis=0), domain_x=domain)
-    res.branch_g = Branch(np.min([ofn_1.branch_g.fvalue_y, ofn_2.branch_g.fvalue_y], axis=0), domain_x=domain)
+    res.branch_f = Branch(np.min([ofn_1.branch_f.fvalue_y, ofn_2.branch_f.fvalue_y], axis=0), domain_x=target_domain)
+    res.branch_g = Branch(np.min([ofn_1.branch_g.fvalue_y, ofn_2.branch_g.fvalue_y], axis=0), domain_x=target_domain)
     return res
