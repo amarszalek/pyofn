@@ -329,10 +329,10 @@ class MinOrderBook(object):
         else:
             existing = None
 
-        if existing is None:
-            existing = self.buy_map.get(key)
-            if existing is None:
-                existing = self.sell_map.get(key)
+        #if existing is None:
+        #    existing = self.buy_map.get(key)
+        #    if existing is None:
+         #       existing = self.sell_map.get(key)
 
         if existing is None:
             raise KeyError('Order not exists')
