@@ -297,6 +297,8 @@ class MinOrderBook(object):
         elif side in [2, 5]:
             if key not in self.sell_map:
                 self.sell_map[key] = order
+        else:
+            raise KeyError('Side must be 1 or 2 or 5')
 
     def del_order(self, order):  # D
         key = self._get_key(order)
@@ -316,6 +318,8 @@ class MinOrderBook(object):
             self.buy_map.pop(key, None)
         elif side in [2, 5]:
             self.sell_map.pop(key, None)
+        else:
+            raise KeyError('Side must be 1 or 2 or 5')
 
 
     def mod_order(self, order):  # M
