@@ -127,6 +127,8 @@ class MinOrderBook(object):
         self.sell_map = {}
         self.current_time = None
         self.nmsg = 0
+        #self.has_zero = False
+        #self.is_crossed = False
 
         if data is not None:
             try:
@@ -140,15 +142,21 @@ class MinOrderBook(object):
         batch_data = []
         snapshot_time = self.current_time
         snapshot_nmsg = self.nmsg
+        #snapshot_has_zero = self.has_zero
+        #snapshot_is_crossed = self.is_crossed
         for order in self.buy_map.values():
             order_with_time = order.copy()
             order_with_time['snapshot_timestamp'] = snapshot_time
             order_with_time['snapshot_nmsg'] = snapshot_nmsg
+            #order_with_time['snapshot_has_zero'] = snapshot_has_zero
+            #order_with_time['snapshot_is_crossed'] = snapshot_is_crossed
             batch_data.append(order_with_time)
         for order in self.sell_map.values():
             order_with_time = order.copy()
             order_with_time['snapshot_timestamp'] = snapshot_time
             order_with_time['snapshot_nmsg'] = snapshot_nmsg
+            #order_with_time['snapshot_has_zero'] = snapshot_has_zero
+            #order_with_time['snapshot_is_crossed'] = snapshot_is_crossed
             batch_data.append(order_with_time)
         return batch_data
 
@@ -160,6 +168,8 @@ class MinOrderBook(object):
         }
         snapshot_time = self.current_time
         snapshot_nmsg = self.nmsg
+        snapshot_has_zero = self.has_zero
+        snapshot_is_crossed = self.is_crossed
 
         for order in chain(self.buy_map.values(), self.sell_map.values()):
             cols['order_date'].append(order.get('order_date'))
@@ -171,6 +181,8 @@ class MinOrderBook(object):
             cols['priority_date'].append(order.get('priority_date'))
             cols['snapshot_timestamp'].append(snapshot_time)
             cols['snapshot_nmsg'].append(snapshot_nmsg)
+            #cols['snapshot_has_zero'].append(snapshot_has_zero)
+            #cols['snapshot_is_crossed'].append(snapshot_is_crossed)
         return cols
 
     @staticmethod
@@ -178,9 +190,13 @@ class MinOrderBook(object):
         ob_restored = MinOrderBook()
         ob_restored.current_time = batch_data[0]['snapshot_timestamp']
         ob_restored.nmsg = batch_data[0]['snapshot_nmsg']
+        #ob_restored.has_zero = batch_data[0]['snapshot_has_zero']
+        #ob_restored.is_crossed = batch_data[0]['snapshot_is_crossed']
         for order_dict in batch_data:
             del order_dict['snapshot_timestamp']
             del order_dict['snapshot_nmsg']
+            #del order_dict['snapshot_has_zero']
+            #del order_dict['snapshot_is_crossed']
             ob_restored.add_order(order_dict)
         return ob_restored
 
@@ -199,8 +215,11 @@ class MinOrderBook(object):
         # Odtworzenie metadanych globalnych
         ob_restored.current_time = batch_data['snapshot_timestamp'][0]
         ob_restored.nmsg = batch_data['snapshot_nmsg'][0]
+        #ob_restored.has_zero = batch_data['snapshot_has_zero'][0]
+        #ob_restored.is_crossed = batch_data['snapshot_is_crossed'][0]
 
         # Przygotowanie kluczy do rekonstrukcji zleceń
+        #meta_keys = {'snapshot_timestamp', 'snapshot_nmsg', 'snapshot_has_zero', 'snapshot_is_crossed'}
         meta_keys = {'snapshot_timestamp', 'snapshot_nmsg'}
         order_keys = [k for k in batch_data.keys() if k not in meta_keys]
 
@@ -398,11 +417,11 @@ class MinOrderBook(object):
                     price_down = best_bid - 0.03
 
         # Czyścimy Sells
-        keys_to_del = [k for k, o in ob.sell_map.items() if o['price'] > price_up]
+        keys_to_del = [k for k, o in ob.sell_map.items() if (o['price'] > price_up and o['price'] != 0.0)]
         for k in keys_to_del:
             del ob.sell_map[k]
         # Czyścimy Buys
-        keys_to_del = [k for k, o in ob.buy_map.items() if o['price'] < price_down]
+        keys_to_del = [k for k, o in ob.buy_map.items() if (o['price'] < price_down and o['price'] != 0.0)]
         for k in keys_to_del:
             del ob.buy_map[k]
 
