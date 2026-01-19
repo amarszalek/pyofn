@@ -168,8 +168,8 @@ class MinOrderBook(object):
         }
         snapshot_time = self.current_time
         snapshot_nmsg = self.nmsg
-        snapshot_has_zero = self.has_zero
-        snapshot_is_crossed = self.is_crossed
+        #snapshot_has_zero = self.has_zero
+        #snapshot_is_crossed = self.is_crossed
 
         for order in chain(self.buy_map.values(), self.sell_map.values()):
             cols['order_date'].append(order.get('order_date'))
