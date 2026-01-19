@@ -102,11 +102,11 @@ def _func_min_obooks_gpw(df, ob2, nlevels, obs_prev, current_batch_cols):
     if ob2.isempty():
         return 'Empty'
 
-    if ob2.has_zero_price():
-        return 'Empty'
+    #if ob2.has_zero_price():
+    #    return 'Empty'
 
-    if ob2.is_crossed():
-        return 'Empty'
+    #if ob2.is_crossed():
+    #    return 'Empty'
 
     ob3 = ob2.reduce_to_nlevels(nlevels=nlevels)
 
