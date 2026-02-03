@@ -358,7 +358,7 @@ class MinOrderBook(object):
          #       existing = self.sell_map.get(key)
 
         if existing is None:
-            raise KeyError('Order not exists')
+            raise KeyError(f'Order not exists: {order}')
             #self.add_order(order)  # Jeśli nie ma, to dodaj
             #return
 
