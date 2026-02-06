@@ -370,9 +370,9 @@ class MinOrderBook(object):
 
     def retransmit_order(self, order):  # Y
         try:
-            self.mod_order(order)
-        except (ValueError, KeyError):
             self.add_order(order)
+        except (ValueError, KeyError):
+            self.mod_order(order)
 
     def reduce_to_nlevels(self, nlevels=10):
         """
