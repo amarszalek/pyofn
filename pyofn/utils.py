@@ -358,9 +358,10 @@ class MinOrderBook(object):
          #       existing = self.sell_map.get(key)
 
         if existing is None:
-            raise KeyError(f'Order not exists: {order}')
-            #self.add_order(order)  # Jeśli nie ma, to dodaj
-            #return
+            #raise KeyError(f'Order not exists: {order}')
+            print(f'Order not exists: {order}', 'dodaje')
+            self.add_order(order)  # Jeśli nie ma, to dodaj
+            return
 
         # Update in-place
         for k, v in order.items():
