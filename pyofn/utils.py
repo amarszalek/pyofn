@@ -331,7 +331,7 @@ class MinOrderBook(object):
             existing = None
 
         if existing is None:
-            raise KeyError('Order not exists')
+            raise KeyError(f'Order not exists: {order}')
 
         if side == 1:
             self.buy_map.pop(key, None)
